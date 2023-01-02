@@ -15,7 +15,8 @@
 
 AMultiplayerMenuCharacter::AMultiplayerMenuCharacter():
 	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
-	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
+	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete)),
+	JoinSessionCompleteDelegate(FOnJoinSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnJoinSessionComplete))
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -126,6 +127,7 @@ TSharedPtr<FOnlineSessionSettings> AMultiplayerMenuCharacter::GetSessionSettings
 {
 	TSharedPtr<FOnlineSessionSettings> SessionSettings = MakeShareable(new FOnlineSessionSettings());
 
+	SessionSettings->Set(FName("MatchType"), FString("DeathMatch"));
 	SessionSettings->bAllowJoinInProgress = true;
 	SessionSettings->bAllowJoinViaPresence = true;
 	SessionSettings->bShouldAdvertise = true;
@@ -149,49 +151,39 @@ void AMultiplayerMenuCharacter::OnCreateSessionComplete(FName SessionName, bool 
 {
 	if (bWasSuccessful)
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			10.0f,
-			FColor::Green,
-			FString::Printf(TEXT("Session name - %s"), *SessionName.ToString())
-		);
-	}
-	else
-	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			10.0f,
-			FColor::Red,
-			FString::Printf(TEXT("Creating session failed"))
-		);
+		UWorld* World = GetWorld();
+		World->ServerTravel("/Game/Maps/Lobby?listen");
 	}
 }
 
 void AMultiplayerMenuCharacter::OnFindSessionsComplete(bool bWasSuccessful)
 {
-	if (bWasSuccessful)
+	if (bWasSuccessful && SessionInterface.IsValid())
 	{
 		for (FOnlineSessionSearchResult Result : SessionSearch->SearchResults)
 		{
-			FString SessionId = Result.GetSessionIdStr();
-			FString UserName = Result.Session.OwningUserName;
+			FString MatchType;
+			Result.Session.SessionSettings.Get(FName("MatchType"), MatchType);
 
-			GEngine->AddOnScreenDebugMessage(
-				-1,
-				10.0f,
-				FColor::Green,
-				FString::Printf(TEXT("ID - %s / Name - %s"), *SessionId, *UserName)
-			);
+			if (MatchType == "DeathMatch")
+			{
+				SessionInterface->AddOnJoinSessionCompleteDelegate_Handle(JoinSessionCompleteDelegate);
+				SessionInterface->JoinSession(*GetLocalPlayerId(), NAME_GameSession, Result);
+			}
 		}
 	}
-	else
+}
+
+void AMultiplayerMenuCharacter::OnJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
+{
+	if (SessionInterface.IsValid())
 	{
-		GEngine->AddOnScreenDebugMessage(
-			-1,
-			10.0f,
-			FColor::Red,
-			FString::Printf(TEXT("No sessions found"))
-		);
+		FString Adress;
+		if (SessionInterface->GetResolvedConnectString(NAME_GameSession, Adress))
+		{
+			APlayerController* PlayerController = GetGameInstance()->GetFirstLocalPlayerController();
+			PlayerController->ClientTravel(Adress, ETravelType::TRAVEL_Absolute);
+		}
 	}
 }
 
