@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "Interfaces/OnlineSessionInterface.h"
 #include "MultiplayerMenuCharacter.generated.h"
 
 UCLASS(config=Game)
@@ -63,7 +64,26 @@ public:
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
 private:
-	TSharedPtr<class IOnlineSession, ESPMode::ThreadSafe> SessionInterface;
+	IOnlineSessionPtr SessionInterface;
 
+	TSharedPtr<FOnlineSessionSearch> SessionSearch;
+
+	UFUNCTION(BlueprintCallable)
+	void CreateGameSession();
+	UFUNCTION(BlueprintCallable)
+	void JoinGameSession();
+
+	void CheckForExistingSession();
+
+	FUniqueNetIdRepl GetLocalPlayerId();
+	TSharedPtr<FOnlineSessionSettings> GetSessionSettings();
+
+	TSharedPtr<FOnlineSessionSearch> GetSessionSearch();
+
+	FOnCreateSessionCompleteDelegate CreateSessionCompleteDelegate;
+	FOnFindSessionsCompleteDelegate FindSessionsCompleteDelegate;
+
+	void OnCreateSessionComplete(FName SessionName, bool bWasSuccessful);
+	void OnFindSessionsComplete(bool bWasSuccessful);
 };
 

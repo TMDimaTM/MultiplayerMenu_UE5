@@ -8,12 +8,14 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "OnlineSubsystem.h"
-#include "Interfaces/OnlineSessionInterface.h"
+#include "OnlineSessionSettings.h"
 
 //////////////////////////////////////////////////////////////////////////
 // AMultiplayerMenuCharacter
 
-AMultiplayerMenuCharacter::AMultiplayerMenuCharacter()
+AMultiplayerMenuCharacter::AMultiplayerMenuCharacter():
+	CreateSessionCompleteDelegate(FOnCreateSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnCreateSessionComplete)),
+	FindSessionsCompleteDelegate(FOnFindSessionsCompleteDelegate::CreateUObject(this, &ThisClass::OnFindSessionsComplete))
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
@@ -56,10 +58,6 @@ AMultiplayerMenuCharacter::AMultiplayerMenuCharacter()
 	if (OnlineSubsystem != nullptr)
 	{
 		SessionInterface = OnlineSubsystem->GetSessionInterface();
-		if (SessionInterface != nullptr)
-		{
-
-		}
 	}
 }
 
@@ -87,6 +85,114 @@ void AMultiplayerMenuCharacter::SetupPlayerInputComponent(class UInputComponent*
 	// handle touch devices
 	PlayerInputComponent->BindTouch(IE_Pressed, this, &AMultiplayerMenuCharacter::TouchStarted);
 	PlayerInputComponent->BindTouch(IE_Released, this, &AMultiplayerMenuCharacter::TouchStopped);
+}
+
+void AMultiplayerMenuCharacter::CreateGameSession()
+{
+	if (SessionInterface.IsValid())
+	{
+		CheckForExistingSession();
+
+		SessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
+		SessionInterface->CreateSession(*GetLocalPlayerId(), NAME_GameSession, *GetSessionSettings());
+	}
+}
+
+void AMultiplayerMenuCharacter::JoinGameSession()
+{
+	if (SessionInterface.IsValid())
+	{
+		SessionInterface->AddOnFindSessionsCompleteDelegate_Handle(FindSessionsCompleteDelegate);
+		SessionInterface->FindSessions(*GetLocalPlayerId(), GetSessionSearch().ToSharedRef());
+	}
+}
+
+void AMultiplayerMenuCharacter::CheckForExistingSession()
+{
+	FNamedOnlineSession* ExistingSession = SessionInterface->GetNamedSession(NAME_GameSession);
+	if (ExistingSession != nullptr)
+	{
+		SessionInterface->DestroySession(NAME_GameSession);
+	}
+}
+
+FUniqueNetIdRepl AMultiplayerMenuCharacter::GetLocalPlayerId()
+{
+	ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+	return LocalPlayer->GetPreferredUniqueNetId();
+}
+
+TSharedPtr<FOnlineSessionSettings> AMultiplayerMenuCharacter::GetSessionSettings()
+{
+	TSharedPtr<FOnlineSessionSettings> SessionSettings = MakeShareable(new FOnlineSessionSettings());
+
+	SessionSettings->bAllowJoinInProgress = true;
+	SessionSettings->bAllowJoinViaPresence = true;
+	SessionSettings->bShouldAdvertise = true;
+	SessionSettings->bUsesPresence = true;
+	SessionSettings->NumPublicConnections = 4;
+
+	return SessionSettings;
+}
+
+TSharedPtr<FOnlineSessionSearch> AMultiplayerMenuCharacter::GetSessionSearch()
+{
+	SessionSearch = MakeShareable(new FOnlineSessionSearch());
+
+	SessionSearch->MaxSearchResults = 10000;
+	SessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
+
+	return SessionSearch;
+}
+
+void AMultiplayerMenuCharacter::OnCreateSessionComplete(FName SessionName, bool bWasSuccessful)
+{
+	if (bWasSuccessful)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			10.0f,
+			FColor::Green,
+			FString::Printf(TEXT("Session name - %s"), *SessionName.ToString())
+		);
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			10.0f,
+			FColor::Red,
+			FString::Printf(TEXT("Creating session failed"))
+		);
+	}
+}
+
+void AMultiplayerMenuCharacter::OnFindSessionsComplete(bool bWasSuccessful)
+{
+	if (bWasSuccessful)
+	{
+		for (FOnlineSessionSearchResult Result : SessionSearch->SearchResults)
+		{
+			FString SessionId = Result.GetSessionIdStr();
+			FString UserName = Result.Session.OwningUserName;
+
+			GEngine->AddOnScreenDebugMessage(
+				-1,
+				10.0f,
+				FColor::Green,
+				FString::Printf(TEXT("ID - %s / Name - %s"), *SessionId, *UserName)
+			);
+		}
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(
+			-1,
+			10.0f,
+			FColor::Red,
+			FString::Printf(TEXT("No sessions found"))
+		);
+	}
 }
 
 void AMultiplayerMenuCharacter::TouchStarted(ETouchIndex::Type FingerIndex, FVector Location)
